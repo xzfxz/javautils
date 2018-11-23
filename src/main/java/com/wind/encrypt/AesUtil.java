@@ -1,100 +1,201 @@
 package com.wind.encrypt;
-
-import com.wind.common.Constants;
-
-import javax.crypto.*;
-import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 
+import javax.crypto.BadPaddingException;
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.KeyGenerator;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 
-/**
- * AES加密工具类
- * AES已经变成目前对称加密中最流行算法之一；AES可以使用128、192、和256位密钥，并且用128位分组加密和解密数据
- * @author wind
- */
+import sun.misc.BASE64Decoder;
+import sun.misc.BASE64Encoder;
 
 public class AesUtil {
-	
-	public static final String AES_KEY = "AES";
-
+    private final static String encoding = "UTF-8";
+    private final static String AES = "AES";
+    
     /**
-     * des加密
-     * @param str 待加密对象
-     * @param key 密钥 长度为8的倍数
+     * AES加密 
+     *
+     * @param content
+     * @param password
      * @return
      */
-    public static byte[] encrypt(String str, String key) {
-        byte[] bytes = null;
-
-        try {
-            Cipher cipher = init(Cipher.ENCRYPT_MODE, key);
-            bytes = cipher.doFinal(str.getBytes(Constants.UTF8));
-        } catch (IllegalBlockSizeException e) {
-            e.printStackTrace();
-        } catch (BadPaddingException e) {
-            e.printStackTrace();
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-        }
-
-        return bytes;
+    public static String encryptAES(String content, String password) {
+        byte[] encryptResult = encrypt(content, password);
+        String encryptResultStr = parseByte2HexStr(encryptResult);
+        // BASE64位加密  
+        encryptResultStr = ebotongEncrypto(encryptResultStr);
+        return encryptResultStr;
     }
 
     /**
-     * des解密
-     * @param bytes 待解密对象
-     * @param key 密钥 长度为8的倍数
+     * AES解密 
+     *
+     * @param encryptResultStr
+     * @param password
      * @return
      */
-    public static String decrypt(byte[] bytes, String key) {
-        String str = null;
-        try {
-            Cipher cipher = init(Cipher.DECRYPT_MODE, key);
-            str = new String(cipher.doFinal(bytes), Constants.UTF8);
-        } catch (IllegalBlockSizeException e) {
-            e.printStackTrace();
-        } catch (BadPaddingException e) {
-            e.printStackTrace();
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-        }
-
-        return str;
+    public static String decrypt(String encryptResultStr, String password) {
+        // BASE64位解密  
+        String decrpt = ebotongDecrypto(encryptResultStr);
+        byte[] decryptFrom = parseHexStr2Byte(decrpt);
+        byte[] decryptResult = decrypt(decryptFrom, password);
+        return new String(decryptResult);
     }
 
+    /**
+     * 加密字符串 
+     */
+    public static String ebotongEncrypto(String str) {
+        BASE64Encoder base64encoder = new BASE64Encoder();
+        String result = str;
+        if (str != null && str.length() > 0) {
+            try {
+                byte[] encodeByte = str.getBytes(encoding);
+                result = base64encoder.encode(encodeByte);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        //base64加密超过一定长度会自动换行 需要去除换行符  
+        return result.replaceAll("\r\n", "").replaceAll("\r", "").replaceAll("\n", "");
+    }
 
-
-
-    private static Cipher init(int mode, String key){
-        Cipher cipher = null;
+    /**
+     * 解密字符串 
+     */
+    public static String ebotongDecrypto(String str) {
+        BASE64Decoder base64decoder = new BASE64Decoder();
         try {
-            KeyGenerator kGen = KeyGenerator.getInstance(AES_KEY);
-
-            kGen.init(128, new SecureRandom(key.getBytes()));
-
-            cipher = Cipher.getInstance(AES_KEY);
-            cipher.init(mode, new SecretKeySpec(kGen.generateKey().getEncoded(), AES_KEY));
-
+            byte[] encodeByte = base64decoder.decodeBuffer(str);
+            return new String(encodeByte);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return str;
+        }
+    }
+    /**
+     * 加密   
+     *
+     * @param content 需要加密的内容   
+     * @param password  加密密码   
+     * @return
+     */
+    private static byte[] encrypt(String content, String password) {
+        try {
+            KeyGenerator kgen = KeyGenerator.getInstance(AES);
+            //防止linux下 随机生成key  
+            SecureRandom secureRandom = SecureRandom.getInstance("SHA1PRNG" );
+            secureRandom.setSeed(password.getBytes());
+            kgen.init(128, secureRandom);
+            //kgen.init(128, new SecureRandom(password.getBytes()));     
+            SecretKey secretKey = kgen.generateKey();
+            byte[] enCodeFormat = secretKey.getEncoded();
+            SecretKeySpec key = new SecretKeySpec(enCodeFormat, AES);
+            Cipher cipher = Cipher.getInstance(AES);// 创建密码器     
+            byte[] byteContent = content.getBytes(encoding);
+            cipher.init(Cipher.ENCRYPT_MODE, key);// 初始化     
+            byte[] result = cipher.doFinal(byteContent);
+            return result; // 加密     
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
         } catch (NoSuchPaddingException e) {
             e.printStackTrace();
         } catch (InvalidKeyException e) {
             e.printStackTrace();
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        } catch (IllegalBlockSizeException e) {
+            e.printStackTrace();
+        } catch (BadPaddingException e) {
+            e.printStackTrace();
         }
-        return cipher;
+        return null;
+    }
+
+
+    /**解密   
+     * @param content  待解密内容   
+     * @param password 解密密钥   
+     * @return
+     */
+    private static byte[] decrypt(byte[] content, String password) {
+        try {
+            KeyGenerator kgen = KeyGenerator.getInstance(AES);
+            //防止linux下 随机生成key  
+            SecureRandom secureRandom = SecureRandom.getInstance("SHA1PRNG" );
+            secureRandom.setSeed(password.getBytes());
+            kgen.init(128, secureRandom);
+            //kgen.init(128, new SecureRandom(password.getBytes()));     
+            SecretKey secretKey = kgen.generateKey();
+            byte[] enCodeFormat = secretKey.getEncoded();
+            SecretKeySpec key = new SecretKeySpec(enCodeFormat, AES);
+            Cipher cipher = Cipher.getInstance(AES);// 创建密码器     
+            cipher.init(Cipher.DECRYPT_MODE, key);// 初始化     
+            byte[] result = cipher.doFinal(content);
+            return result; // 加密     
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (NoSuchPaddingException e) {
+            e.printStackTrace();
+        } catch (InvalidKeyException e) {
+            e.printStackTrace();
+        } catch (IllegalBlockSizeException e) {
+            e.printStackTrace();
+        } catch (BadPaddingException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    /**将二进制转换成16进制   
+     * @param buf
+     * @return
+     */
+    public static String parseByte2HexStr(byte buf[]) {
+        StringBuffer sb = new StringBuffer();
+        for (int i = 0; i < buf.length; i++) {
+            String hex = Integer.toHexString(buf[i] & 0xFF);
+            if (hex.length() == 1) {
+                hex = '0' + hex;
+            }
+            sb.append(hex.toUpperCase());
+        }
+        return sb.toString();
+    }
+
+
+    /**将16进制转换为二进制   
+     * @param hexStr
+     * @return
+     */
+    public static byte[] parseHexStr2Byte(String hexStr) {
+        if (hexStr.length() < 1)
+            return null;
+        byte[] result = new byte[hexStr.length()/2];
+        for (int i = 0;i< hexStr.length()/2; i++) {
+            int high = Integer.parseInt(hexStr.substring(i*2, i*2+1), 16);
+            int low = Integer.parseInt(hexStr.substring(i*2+1, i*2+2), 16);
+            result[i] = (byte) (high * 16 + low);
+        }
+        return result;
     }
 
     public static void main(String[] args) {
-        String str = "hello world";
-        String key = "123";
-        byte[] bytes = encrypt(str, key);
-
-        String s = decrypt(bytes, key);
+        String c="i love u";
+        String k="a";
+        String s = encryptAES(c, k);
         System.out.println(s);
+        String decrypt = decrypt(s, k);
+        System.out.println(decrypt);
+
     }
 
-}
+} 
